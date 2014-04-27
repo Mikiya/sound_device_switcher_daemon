@@ -136,12 +136,15 @@ class SoundDeviceSwitcherDaemon
   end
 
   def use_sink(sink)
+    # Set default sink
+    cmd = "#{SET_DEFAULT_SINK_COMMAND} #{sink}"
+    system(cmd)
+
+    # Redirect currently playing applications to the desired sink
     get_sink_inputs.each do |i|
       cmd = "#{CHANGE_LIVE_SINK_COMMAND} #{i} #{sink}"
       system(cmd)
     end
-    cmd = "#{SET_DEFAULT_SINK_COMMAND} #{sink}"
-    system(cmd)
   end
 
   def use_head_phone

@@ -18,17 +18,16 @@
 class SoundDeviceSwitcherDaemon
   USB_SPEAKER = "USB Audio DAC"
   INTERNAL_SPEAKER = "HDA Intel PCH"
-  INTERNAL_SPEAKER_PROC = "PCH"
-  JACK_CONTROL_NAME = "Speaker Playback Switch"
 
   DEVICE_MONITOR_COMMAND="pactl subscribe"
   SINK_LIST_COMMAND="pacmd list-sinks"
-  HEAD_PHONE_STAT_FILE = "/proc/asound/#{INTERNAL_SPEAKER_PROC}/codec#0"
   INPUT_LIST_COMMAND = "pacmd list-sink-inputs"
   SET_DEFAULT_SINK_COMMAND = "pacmd set-default-sink"
   CHANGE_LIVE_SINK_COMMAND = "pacmd move-sink-input"
+  JACK_AVAILABILITY_COMMAND = "pactl list sinks"
 
   def initialize
+    @jack_connected = nil
     @sinks = {}
   end
 
@@ -95,22 +94,21 @@ class SoundDeviceSwitcherDaemon
   end
 
   def head_phone_connected?
-    mode = :search_jack
-    open(HEAD_PHONE_STAT_FILE) do |f|
-      while line=f.gets
-        case mode
-        when :search_jack
-          if line =~ /Speaker Playback Switch/
-            mode = :search_pin_ctls
-          end
-        when :search_pin_ctls
-          if line =~ /Pin-ctls:/
-            return line !~ /OUT/
+    sinks = []
+    current_sink = nil
+    IO.popen(JACK_AVAILABILITY_COMMAND) do |io|
+      while line=io.gets
+        if line =~ /Sink #(\d+)/
+          current_sink = $1.to_i
+          next
+        elsif not current_sink.nil?
+          if line =~ /headphones.+available/i and line !~ /not available/
+            sinks.push(current_sink)
           end
         end
       end
     end
-    raise "Could not open asound proc file: #{HEAD_PHONE_STAT_FILE}"
+    sinks.size > 0
   end
 
   def internal_sink
@@ -140,11 +138,9 @@ class SoundDeviceSwitcherDaemon
   def use_sink(sink)
     get_sink_inputs.each do |i|
       cmd = "#{CHANGE_LIVE_SINK_COMMAND} #{i} #{sink}"
-      puts cmd
       system(cmd)
     end
     cmd = "#{SET_DEFAULT_SINK_COMMAND} #{sink}"
-    puts cmd
     system(cmd)
   end
 
@@ -170,10 +166,8 @@ class SoundDeviceSwitcherDaemon
         end
       when :new
         setup_sink_info
-        p @sinks
       when :remove
         remove_sink(sink)
-        p @sinks
       end
     end
   end
